@@ -122,6 +122,7 @@ enum Counter {
     DnsRegistryTimer,
     DnsRegistryNameChange,
     Timer,
+    MulticastSkipped,
 }
 
 impl fmt::Display for Counter {
@@ -149,6 +150,7 @@ impl fmt::Display for Counter {
             Self::DnsRegistryTimer => write!(f, "dns-registry-timer"),
             Self::DnsRegistryNameChange => write!(f, "dns-registry-name-change"),
             Self::Timer => write!(f, "timer"),
+            Self::MulticastSkipped => write!(f, "multicast-skipped"),
         }
     }
 }
@@ -1158,17 +1160,18 @@ impl Zeroconf {
 
             // Refresh cached A/AAAA records with active queriers
             let mut query_count = 0;
+            let mut skipped = 0;
             for (hostname, _sender) in self.hostname_resolvers.iter() {
                 for (hostname, ip_addr) in
                     self.cache.refresh_due_hostname_resolutions(hostname).iter()
                 {
-                    self.send_query(hostname, ip_address_rr_type(&ip_addr.to_ip_addr()));
+                    skipped += self.send_query(hostname, ip_address_rr_type(&ip_addr.to_ip_addr()));
                     query_count += 1;
                 }
             }
 
             self.increase_counter(Counter::CacheRefreshAddr, query_count);
-
+            self.increase_counter(Counter::MulticastSkipped, skipped);
             // check and evict expired records in our cache
             let now = current_time_millis();
 
@@ -1561,12 +1564,13 @@ impl Zeroconf {
         debug!("register service {:?}", &info);
 
         let outgoing_addrs = self.send_unsolicited_response(&mut info);
-        if !outgoing_addrs.is_empty() {
+        if !outgoing_addrs.0.is_empty() {
             self.notify_monitors(DaemonEvent::Announce(
                 info.get_fullname().to_string(),
-                format!("{:?}", &outgoing_addrs),
+                format!("{:?}", &outgoing_addrs.0),
             ));
         }
+        self.increase_counter(Counter::MulticastSkipped, outgoing_addrs.1);
 
         // The key has to be lower case letter as DNS record name is case insensitive.
         // The info will have the original name.
@@ -1576,16 +1580,18 @@ impl Zeroconf {
 
     /// Sends out announcement of `info` on every valid interface.
     /// Returns the list of interface IPs that sent out the announcement.
-    fn send_unsolicited_response(&mut self, info: &mut ServiceInfo) -> Vec<IpAddr> {
+    fn send_unsolicited_response(&mut self, info: &mut ServiceInfo) -> (Vec<IpAddr>, i64) {
         let mut outgoing_addrs = Vec::new();
         // Send the announcement on one interface per ip version.
         let mut multicast_sent_trackers = HashSet::new();
 
         let mut outgoing_intfs = Vec::new();
+        let mut skipped = 0;
 
         for intf in self.my_intfs.iter() {
             if let Some(tracker) = multicast_send_tracker(intf) {
                 if multicast_sent_trackers.contains(&tracker) {
+                    skipped += 1;
                     continue; // No need to send again on the same interface with same ip version.
                 }
             }
@@ -1633,7 +1639,7 @@ impl Zeroconf {
             );
         }
 
-        outgoing_addrs
+        (outgoing_addrs, skipped)
     }
 
     /// Send probings or finish them if expired. Notify waiting services.
@@ -1795,16 +1801,16 @@ impl Zeroconf {
     }
 
     /// Sends a multicast query for `name` with `qtype`.
-    fn send_query(&self, name: &str, qtype: RRType) {
-        self.send_query_vec(&[(name, qtype)]);
+    fn send_query(&self, name: &str, qtype: RRType) -> i64 {
+        self.send_query_vec(&[(name, qtype)])
     }
 
     /// Sends out a list of `questions` (i.e. DNS questions) via multicast.
-    fn send_query_vec(&self, questions: &[(&str, RRType)]) {
+    fn send_query_vec(&self, questions: &[(&str, RRType)]) -> i64 {
         trace!("Sending query questions: {:?}", questions);
         let mut out = DnsOutgoing::new(FLAGS_QR_QUERY);
         let now = current_time_millis();
-
+        let mut skipped = 0;
         for (name, qtype) in questions {
             out.add_question(name, *qtype);
 
@@ -1828,6 +1834,7 @@ impl Zeroconf {
         for intf in self.my_intfs.iter() {
             if let Some(tracker) = multicast_send_tracker(intf) {
                 if multicast_sent_trackers.contains(&tracker) {
+                    skipped += 1;
                     continue; // no need to send query the same interface with same ip version.
                 }
                 multicast_sent_trackers.insert(tracker);
@@ -1840,6 +1847,7 @@ impl Zeroconf {
             };
             send_dns_outgoing(&out, intf, &sock.pktinfo);
         }
+        skipped
     }
 
     /// Reads one UDP datagram from the socket of `intf`.
@@ -1951,7 +1959,10 @@ impl Zeroconf {
                 }
             }
         } else {
-            self.send_query(instance, RRType::ANY);
+            self.increase_counter(
+                Counter::MulticastSkipped,
+                self.send_query(instance, RRType::ANY),
+            );
             return true;
         }
 
@@ -2972,7 +2983,7 @@ impl Zeroconf {
             self.query_cache_for_service(&ty, &listener, now);
         }
 
-        self.send_query(&ty, RRType::PTR);
+        self.increase_counter(Counter::MulticastSkipped, self.send_query(&ty, RRType::PTR));
         self.increase_counter(Counter::Browse, 1);
 
         let next_time = now + (next_delay * 1000) as u64;
@@ -3046,6 +3057,7 @@ impl Zeroconf {
         fullname: String,
         resp_s: Sender<UnregisterStatus>,
     ) {
+        let mut skipped = 0;
         let response = match self.my_services.remove_entry(&fullname) {
             None => {
                 debug!("unregister: cannot find such service {}", &fullname);
@@ -3059,6 +3071,7 @@ impl Zeroconf {
                 for intf in self.my_intfs.iter() {
                     if let Some(tracker) = multicast_send_tracker(intf) {
                         if multicast_sent_trackers.contains(&tracker) {
+                            skipped += 1;
                             continue; // no need to send unregister the same interface with same ip version.
                         }
                         multicast_sent_trackers.insert(tracker);
@@ -3091,6 +3104,7 @@ impl Zeroconf {
         if let Err(e) = resp_s.send(response) {
             debug!("unregister: failed to send response: {}", e);
         }
+        self.increase_counter(Counter::MulticastSkipped, skipped);
     }
 
     fn exec_command_unregister_resend(&mut self, packet: Vec<u8>, intf: Interface) {
@@ -3239,12 +3253,13 @@ impl Zeroconf {
         let mut query_srv_count = 0;
         let mut new_timers = HashSet::new();
         let mut query_addr_count = 0;
+        let mut skipped = 0;
 
         for (ty_domain, _sender) in self.service_queriers.iter() {
             let refreshed_timers = self.cache.refresh_due_ptr(ty_domain);
             if !refreshed_timers.is_empty() {
                 trace!("sending refresh query for PTR: {}", ty_domain);
-                self.send_query(ty_domain, RRType::PTR);
+                skipped += self.send_query(ty_domain, RRType::PTR);
                 query_ptr_count += 1;
                 new_timers.extend(refreshed_timers);
             }
@@ -3276,6 +3291,7 @@ impl Zeroconf {
         self.increase_counter(Counter::CacheRefreshPTR, query_ptr_count);
         self.increase_counter(Counter::CacheRefreshSrvTxt, query_srv_count);
         self.increase_counter(Counter::CacheRefreshAddr, query_addr_count);
+        self.increase_counter(Counter::MulticastSkipped, skipped);
     }
 }
 

@@ -54,6 +54,17 @@ fn main() {
                 }
             }
             other_event => {
+                let metrics = mdns.get_metrics().expect("Failed to get metrics");
+                if let Ok(metrics) = metrics.recv() {
+                    println!(
+                        "At {:?}: {:?} - Metrics: {:?}",
+                        now.elapsed(),
+                        &other_event,
+                        metrics
+                    );
+                } else {
+                    println!("At {:?}: {:?}", now.elapsed(), &other_event);
+                }
                 println!("At {:?}: {:?}", now.elapsed(), &other_event);
             }
         }

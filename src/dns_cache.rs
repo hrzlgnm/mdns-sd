@@ -325,27 +325,6 @@ impl DnsCache {
                     incoming.get_type(),
                     record_vec.len()
                 );
-                // Before adding a new record, remove any records that were just flushed
-                // (set to expire in ~1 second by the cache_flush logic above).
-                // RFC 6762 Section 10.2 says old records should be flushed when new ones
-                // arrive, but if they don't match exactly, both would remain. The old
-                // flushed one would shadow the new one during resolution until it expires.
-                if incoming.get_cache_flush() {
-                    let now = current_time_millis();
-                    record_vec.retain(|r| {
-                        // Keep records that are not currently expiring soon (not flushed)
-                        // Remove records that expire soon (were just flushed by cache_flush logic)
-                        !r.record.get_record().expires_soon(now)
-                    });
-                }
-                debug!(
-                    "CACHE_NEW: {} ({:?}) TTL={} created={} expires_at={}",
-                    incoming.get_name(),
-                    incoming.get_type(),
-                    incoming.get_record().get_ttl(),
-                    incoming.get_record().get_created(),
-                    incoming.get_record().get_expire_time()
-                );
                 let new_record = DnsRecordIntf {
                     record: incoming,
                     src_intf: intf.into(),

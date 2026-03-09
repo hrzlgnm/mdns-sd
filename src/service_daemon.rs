@@ -2532,32 +2532,17 @@ impl Zeroconf {
 
         // resolve SRV record
         if let Some(records) = self.cache.get_srv(fullname) {
-            if let Some(answer) = records
-                .iter()
-                .find(|r| !r.record.get_record().is_expired(now))
-            {
+            if let Some(answer) = records.iter().find(|r| !r.record.expires_soon(now)) {
                 if let Some(dns_srv) = answer.record.any().downcast_ref::<DnsSrv>() {
                     resolved_service.host = dns_srv.host().to_string();
                     resolved_service.port = dns_srv.port();
                 }
-            } else {
-                debug!(
-                      "SRV_NO_VALID: {} - all {} records expire soon. First record: expires_at={}, now={}, remaining={}ms",
-                      fullname,
-                      records.len(),
-                      records.get(0).map(|r| r.record.get_record().get_expire_time()).unwrap_or(0),
-                      now,
-                      records.get(0).map(|r| r.record.get_record().get_expire_time() as i64 - now as i64).unwrap_or(-1)
-                  );
             }
         }
 
         // resolve TXT record
         if let Some(records) = self.cache.get_txt(fullname) {
-            if let Some(record) = records
-                .iter()
-                .find(|r| !r.record.get_record().is_expired(now))
-            {
+            if let Some(record) = records.iter().find(|r| !r.record.expires_soon(now)) {
                 if let Some(dns_txt) = record.record.any().downcast_ref::<DnsTxt>() {
                     resolved_service.txt_properties = dns_txt.text().into();
                 }
@@ -2569,13 +2554,9 @@ impl Zeroconf {
             for answer in records.iter() {
                 if let Some(dns_a) = answer.record.any().downcast_ref::<DnsAddress>() {
                     if dns_a.expires_soon(now) {
-                        debug!(
-                            "ADDR_EXPIRES_SOON: {} created={} expires={} now={} remaining={}ms",
-                            dns_a.address().to_ip_addr(),
-                            answer.record.get_record().get_created(),
-                            answer.record.get_record().get_expire_time(),
-                            now,
-                            answer.record.get_record().get_expire_time() as i64 - now as i64
+                        trace!(
+                            "Addr expired or expires soon: {}",
+                            dns_a.address().to_ip_addr()
                         );
                     } else {
                         resolved_service.addresses.insert(dns_a.address());

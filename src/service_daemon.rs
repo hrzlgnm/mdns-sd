@@ -3723,7 +3723,7 @@ impl Zeroconf {
         for (ty_domain, _sender) in self.service_queriers.iter() {
             let refreshed_timers = self.cache.refresh_due_ptr(ty_domain);
             if !refreshed_timers.is_empty() {
-                trace!("sending refresh query for PTR: {}", ty_domain);
+                debug!("sending refresh query for PTR: {}", ty_domain);
                 self.send_query(ty_domain, RRType::PTR);
                 query_ptr_count += 1;
                 new_timers.extend(refreshed_timers);
@@ -3731,7 +3731,7 @@ impl Zeroconf {
 
             let (instances, timers) = self.cache.refresh_due_srv_txt(ty_domain);
             for (instance, types) in instances {
-                trace!("sending refresh query for: {}", &instance);
+                debug!("sending refresh query for: {}", &instance);
                 let query_vec = types
                     .into_iter()
                     .map(|ty| (instance.as_str(), ty))
@@ -3742,7 +3742,7 @@ impl Zeroconf {
             new_timers.extend(timers);
             let (hostnames, timers) = self.cache.refresh_due_hosts(ty_domain);
             for hostname in hostnames.iter() {
-                trace!("sending refresh queries for A and AAAA:  {}", hostname);
+                debug!("sending refresh queries for A and AAAA:  {}", hostname);
                 self.send_query_vec(&[(hostname, RRType::A), (hostname, RRType::AAAA)]);
                 query_addr_count += 2;
             }

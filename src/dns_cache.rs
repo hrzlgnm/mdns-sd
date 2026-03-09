@@ -311,6 +311,19 @@ impl DnsCache {
                 (i, false)
             }
             None => {
+                // Before adding a new record, remove any flushed records that would
+                // make this new record unresolvable. RFC 6762 Section 10.2 says old
+                // records should be flushed when new ones arrive, but if they don't
+                // match exactly, both would remain causing the old flushed one to
+                // shadow the new one until it expires.
+                if incoming.get_cache_flush() {
+                    let now = current_time_millis();
+                    record_vec.retain(|r| {
+                        // Keep records that are not currently expiring soon (not flushed)
+                        // Remove records that expire soon (were just flushed by cache_flush logic)
+                        !r.record.get_record().expires_soon(now)
+                    });
+                }
                 let new_record = DnsRecordIntf {
                     record: incoming,
                     src_intf: intf.into(),

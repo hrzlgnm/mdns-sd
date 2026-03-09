@@ -5,7 +5,7 @@
 //! [DnsOutPacket] is the encoded one packet for [DnsOutgoing].
 
 #[cfg(feature = "logging")]
-use crate::log::trace;
+use crate::log::{debug, trace};
 
 use crate::error::{e_fmt, Error, Result};
 use crate::service_info::is_unicast_link_local;
@@ -469,6 +469,7 @@ impl DnsRecord {
 
     fn reset_ttl(&mut self, other: &Self) {
         self.ttl = other.ttl;
+        let old_expire = self.expires;
         self.created = current_time_millis();
         self.expires = get_expiration_time(self.created, self.ttl, 100);
         self.refresh = if self.ttl > 1 {
@@ -478,6 +479,10 @@ impl DnsRecord {
             // then we set refresh to the same time as expires.
             self.expires
         };
+        debug!(
+            "RESET_TTL: {} old_expire={} new_expire={} ttl={} created={}",
+            self.entry.name, old_expire, self.expires, self.ttl, self.created
+        );
     }
 
     /// Modify TTL to reflect the remaining life time from `now`.

@@ -307,10 +307,24 @@ impl DnsCache {
             Some((i, r)) => {
                 // It is possible that this record was just updated in cache_flush
                 // processing. That's okay. We can still reset here.
+                debug!(
+                    "CACHE_UPDATE: {} ({:?}) TTL={} created={} expires_at={}",
+                    incoming.get_name(),
+                    incoming.get_type(),
+                    incoming.get_record().get_ttl(),
+                    incoming.get_record().get_created(),
+                    incoming.get_record().get_expire_time()
+                );
                 r.record.reset_ttl(incoming.as_ref());
                 (i, false)
             }
             None => {
+                debug!(
+                    "CACHE_NO_MATCH: {} ({:?}) - adding as new record. Existing records count: {}",
+                    incoming.get_name(),
+                    incoming.get_type(),
+                    record_vec.len()
+                );
                 // Before adding a new record, remove any records that were just flushed
                 // (set to expire in ~1 second by the cache_flush logic above).
                 // RFC 6762 Section 10.2 says old records should be flushed when new ones
@@ -330,6 +344,14 @@ impl DnsCache {
                         (expires > now + 2000) || (now - r.record.get_record().get_created() < 500)
                     });
                 }
+                debug!(
+                    "CACHE_NEW: {} ({:?}) TTL={} created={} expires_at={}",
+                    incoming.get_name(),
+                    incoming.get_type(),
+                    incoming.get_record().get_ttl(),
+                    incoming.get_record().get_created(),
+                    incoming.get_record().get_expire_time()
+                );
                 let new_record = DnsRecordIntf {
                     record: incoming,
                     src_intf: intf.into(),
@@ -409,6 +431,17 @@ impl DnsCache {
                     if let Some(srv_records) = self.srv.get_mut(instance_name) {
                         srv_records.retain(|srv| {
                             let expired = srv.record.get_record().is_expired(now);
+                            if expired {
+                                debug!(
+                                    "EVICT_SRV: {} created={} ttl={} expires_at={} now={} age={}ms",
+                                    instance_name,
+                                    srv.record.get_record().get_created(),
+                                    srv.record.get_record().get_ttl(),
+                                    srv.record.get_record().get_expire_time(),
+                                    now,
+                                    now - srv.record.get_record().get_created()
+                                );
+                            }
                             !expired
                         });
 

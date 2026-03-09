@@ -332,16 +332,10 @@ impl DnsCache {
                 // flushed one would shadow the new one during resolution until it expires.
                 if incoming.get_cache_flush() {
                     let now = current_time_millis();
-                    // Remove records that are set to expire very soon (within ~2 seconds)
-                    // without an update. These are likely the ones just flushed to now + 1000.
-                    // We use a threshold to be safe: if it expires within 2 seconds and
-                    // hasn't been explicitly updated, it's a flushed record.
                     record_vec.retain(|r| {
-                        let expires = r.record.get_record().get_expire_time();
-                        // Keep records that expire more than 2 seconds away,
-                        // or records that were created very recently (within 500ms)
-                        // since those are likely valid incoming records, not flushed ones
-                        (expires > now + 2000) || (now - r.record.get_record().get_created() < 500)
+                        // Keep records that are not currently expiring soon (not flushed)
+                        // Remove records that expire soon (were just flushed by cache_flush logic)
+                        !r.record.get_record().expires_soon(now)
                     });
                 }
                 debug!(

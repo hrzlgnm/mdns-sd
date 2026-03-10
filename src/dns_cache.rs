@@ -256,6 +256,12 @@ impl DnsCache {
         }
 
         if incoming.get_cache_flush() {
+            debug!(
+                "CACHE_FLUSH received for {} ({:?}), existing records count: {}",
+                incoming.get_name(),
+                incoming.get_type(),
+                record_vec.len()
+            );
             let now = current_time_millis();
             let class = incoming.get_class();
             let rtype = incoming.get_type();

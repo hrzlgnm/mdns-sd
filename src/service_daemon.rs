@@ -3731,10 +3731,12 @@ impl Zeroconf {
 
             let (instances, timers) = self.cache.refresh_due_srv_txt(ty_domain);
             for (instance, types) in instances {
-                debug!("sending refresh query for: {}", &instance);
                 let query_vec = types
                     .into_iter()
-                    .map(|ty| (instance.as_str(), ty))
+                    .map(|ty| {
+                        debug!("sending refresh query for {ty}: {instance}");
+                        (instance.as_str(), ty)
+                    })
                     .collect::<Vec<_>>();
                 self.send_query_vec(&query_vec);
                 query_srv_count += 1;

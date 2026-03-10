@@ -1311,6 +1311,14 @@ impl ResolvedService {
             || self.fullname.is_empty()
             || self.host.is_empty()
             || self.addresses.is_empty();
+        debug!(
+            "ty_domain={ty_domain} fullname={fullname} host={host} addresses={addresses:?} is_valid={is_valid}",
+            ty_domain = self.ty_domain,
+            fullname = self.fullname,
+            host = self.host,
+            addresses = self.addresses,
+            is_valid = !some_missing
+        );
         !some_missing
     }
 

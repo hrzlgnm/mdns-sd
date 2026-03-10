@@ -370,7 +370,7 @@ impl DnsCache {
                 let expired = addr.record.get_record().is_expired(now);
                 if expired {
                     if let Some(addr_record) = addr.record.any().downcast_ref::<DnsAddress>() {
-                        trace!("evict expired ADDR: {:?}", addr_record);
+                        debug!("evict expired ADDR: {:?}", addr_record);
                         removed
                             .entry(addr.record.get_name().to_string())
                             .or_insert_with(HashSet::new)
@@ -442,7 +442,7 @@ impl DnsCache {
                 let expired = x.record.get_record().is_expired(now);
                 if expired {
                     if let Some(dns_ptr) = x.record.any().downcast_ref::<DnsPointer>() {
-                        trace!("expired PTR: domain:{ty_domain} record: {:?}", dns_ptr);
+                        debug!("expired PTR: domain:{ty_domain} record: {:?}", dns_ptr);
                         expired_instances
                             .entry(ty_domain.to_string())
                             .or_insert_with(HashSet::new)

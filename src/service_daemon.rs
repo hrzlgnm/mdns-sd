@@ -2554,7 +2554,7 @@ impl Zeroconf {
             for answer in records.iter() {
                 if let Some(dns_a) = answer.record.any().downcast_ref::<DnsAddress>() {
                     if dns_a.expires_soon(now) {
-                        trace!(
+                        debug!(
                             "Addr expired or expires soon: {}",
                             dns_a.address().to_ip_addr()
                         );
